@@ -1,6 +1,6 @@
 //! Daemon module for running the notification monitoring daemon.
 
-use crate::database::{NotificationDatabase};
+use crate::database::{NotificationDatabase, Notification};
 use tokio_rusqlite::Connection as TokioConnection;
 use plist::Value;
 use std::str;
@@ -119,8 +119,25 @@ impl NotificationDaemon {
             // Try to parse as binary plist
             match plist::from_bytes::<Value>(&bytes) {
                 Ok(plist_value) => {
-                    println!("  Parsed notification data:");
-                    println!("  {:#?}", plist_value);
+                    // Parse the plist into our Notification struct
+                    if let Some(notification) = parse_notification_from_plist(&plist_value, rowid) {
+                        println!("  Parsed notification:");
+                        println!("    ID: {}", notification.id);
+                        println!("    Title: {}", notification.title);
+                        if let Some(subtitle) = notification.subtitle {
+                            println!("    Subtitle: {}", subtitle);
+                        }
+                        println!("    Body: {}", notification.body);
+                        println!("    Date: {}", notification.date);
+                        if let Some(bundle_id) = notification.bundle_id {
+                            println!("    Bundle ID: {}", bundle_id);
+                        }
+                    } else {
+                        println!("  Failed to parse notification data into structured format");
+                        // Fallback to showing raw plist
+                        println!("  Raw plist data:");
+                        println!("  {:#?}", plist_value);
+                    }
                 }
                 Err(e) => {
                     println!("  Failed to parse as binary plist: {}", e);
@@ -132,5 +149,72 @@ impl NotificationDaemon {
         }
 
         Ok(())
+    }
+}
+
+/// Parse a plist Value into a Notification struct
+fn parse_notification_from_plist(plist_value: &Value, rowid: i64) -> Option<Notification> {
+    // Try to extract a dictionary from the plist value
+    match plist_value {
+        Value::Dictionary(dict) => {
+            // Extract fields from the main dictionary
+            let mut title = String::new();
+            let mut subtitle: Option<String> = None;
+            let mut body = String::new();
+            let mut date = 0i64;
+            let mut bundle_id: Option<String> = None;
+
+            // Extract bundle ID from the main dictionary (app field)
+            if let Some(bundle_id_value) = dict.get("app") {
+                if let Some(bundle_id_str) = bundle_id_value.as_string() {
+                    bundle_id = Some(bundle_id_str.to_string());
+                }
+            }
+
+            // Extract date from the main dictionary (date field)
+            if let Some(date_value) = dict.get("date") {
+                // Extract as f64 first, then convert to i64
+                if let Some(date_num) = date_value.as_real() {
+                    date = date_num as i64;
+                }
+            }
+
+            // Look for the nested request dictionary that contains notification details
+            if let Some(req_value) = dict.get("req") {
+                if let Value::Dictionary(req_dict) = req_value {
+                    // Extract title from nested req dictionary (field "titl")
+                    if let Some(title_value) = req_dict.get("titl") {
+                        if let Some(title_str) = title_value.as_string() {
+                            title = title_str.to_string();
+                        }
+                    }
+
+                    // Extract subtitle from nested req dictionary (field "subt")
+                    if let Some(subtitle_value) = req_dict.get("subt") {
+                        if let Some(subtitle_str) = subtitle_value.as_string() {
+                            subtitle = Some(subtitle_str.to_string());
+                        }
+                    }
+
+                    // Extract body from nested req dictionary (field "body")
+                    if let Some(body_value) = req_dict.get("body") {
+                        if let Some(body_str) = body_value.as_string() {
+                            body = body_str.to_string();
+                        }
+                    }
+                }
+            }
+
+            // Create and return the Notification struct
+            Some(Notification {
+                id: rowid,
+                title,
+                subtitle,
+                body,
+                date,
+                bundle_id,
+            })
+        }
+        _ => None
     }
 }
