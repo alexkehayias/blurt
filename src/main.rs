@@ -1,6 +1,6 @@
 //! Main entry point for the macOS notification daemon.
 
-use mattdaemon::daemon::NotificationDaemon;
+use blurt::daemon::NotificationDaemon;
 use std::env;
 
 #[tokio::main]

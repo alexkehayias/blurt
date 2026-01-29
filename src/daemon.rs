@@ -75,16 +75,13 @@ impl NotificationDaemon {
 
                 // If there are new records
                 if max_id > last_rowid {
-                    println!("Found {} new notification(s) since last check", max_id - last_rowid);
-
-                    // Query all new records since last check
-                    self.query_new_notifications(&conn, last_rowid).await?;
-
-                    // Update our last checked rowid
-                    self.last_rowid = Some(max_id);
-                } else {
-                    // No new records since last check
-                    println!("No new notifications since last check");
+                    let new_max_rowid = self.query_new_notifications(&conn, last_rowid).await?;
+                    self.last_rowid = Some(new_max_rowid);
+                }
+                // The user dismissed some notices so the ROWID is now lower
+                if max_id < last_rowid {
+                    let new_max_rowid = self.query_new_notifications(&conn, max_id).await?;
+                    self.last_rowid = Some(new_max_rowid);
                 }
             }
             None => {
@@ -96,7 +93,7 @@ impl NotificationDaemon {
     }
 
     /// Query new notifications since last check
-    async fn query_new_notifications(&self, conn: &TokioConnection, last_rowid: i64) -> Result<(), Box<dyn std::error::Error>> {
+    async fn query_new_notifications(&self, conn: &TokioConnection, last_rowid: i64) -> Result<i64, Box<dyn std::error::Error>> {
         // Query all new records since last checked ROWID
         let new_records = conn.call(move |db_conn| {
             let mut stmt = db_conn.prepare("SELECT ROWID, data FROM record WHERE ROWID > ? ORDER BY ROWID ASC")?;
@@ -112,15 +109,21 @@ impl NotificationDaemon {
             Ok(records)
         }).await?;
 
+        // Track the actual maximum ROWID we retrieved
+        let mut actual_max_rowid = last_rowid;
+
         // Process each new record
-        for (rowid, bytes) in new_records {
+        for (rowid, bytes) in &new_records {
             println!("Processing notification from ROWID: {}", rowid);
 
+            // Update the maximum ROWID seen
+            actual_max_rowid = *rowid;
+
             // Try to parse as binary plist
-            match plist::from_bytes::<Value>(&bytes) {
+            match plist::from_bytes::<Value>(bytes) {
                 Ok(plist_value) => {
                     // Parse the plist into our Notification struct
-                    if let Some(notification) = parse_notification_from_plist(&plist_value, rowid) {
+                    if let Some(notification) = parse_notification_from_plist(&plist_value, *rowid) {
                         println!("  Parsed notification:");
                         println!("    ID: {}", notification.id);
                         println!("    Title: {}", notification.title);
@@ -142,13 +145,13 @@ impl NotificationDaemon {
                 Err(e) => {
                     println!("  Failed to parse as binary plist: {}", e);
                     // If it's not a plist, show raw data
-                    let hex_string = hex::encode(&bytes);
+                    let hex_string = hex::encode(bytes);
                     println!("  Raw hex data: {}", hex_string);
                 }
             }
         }
 
-        Ok(())
+        Ok(actual_max_rowid)
     }
 }
 

@@ -1,5 +1,5 @@
 [package]
-name = "mattdaemon"
+name = "blurt"
 version = "0.1.0"
 edition = "2024"
 
@@ -11,5 +11,5 @@ hex = "0.4"
 plist = "1.4"
 
 [lib]
-name = "mattdaemon"
+name = "blurt"
 path = "src/lib.rs"

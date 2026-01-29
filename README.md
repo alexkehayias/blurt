@@ -34,10 +34,10 @@ cargo build --release
 
 ```bash
 # Run with default database path
-./target/release/mattdaemon
+./target/release/blurt
 
 # Run with custom database path
-./target/release/mattdaemon /path/to/custom/database.db
+./target/release/blurt /path/to/custom/database.db
 ```
 
 ## Database Schema
