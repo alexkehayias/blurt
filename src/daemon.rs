@@ -6,10 +6,15 @@ use plist::Value;
 use std::str;
 use tokio::time::{sleep, Duration};
 
+#[cfg(feature = "webhook")]
+use reqwest::Client;
+
 /// The main daemon structure
 pub struct NotificationDaemon {
     db: NotificationDatabase,
     last_rowid: Option<i64>,
+    #[cfg(feature = "webhook")]
+    webhook_url: Option<String>,
 }
 
 impl NotificationDaemon {
@@ -18,6 +23,18 @@ impl NotificationDaemon {
         Self {
             db: NotificationDatabase::new(db_path),
             last_rowid: None,
+            #[cfg(feature = "webhook")]
+            webhook_url: None,
+        }
+    }
+
+    /// Create a new daemon instance with a webhook URL
+    #[cfg(feature = "webhook")]
+    pub fn with_webhook(db_path: &str, webhook_url: String) -> Self {
+        Self {
+            db: NotificationDatabase::new(db_path),
+            last_rowid: None,
+            webhook_url: Some(webhook_url),
         }
     }
 
@@ -52,6 +69,15 @@ impl NotificationDaemon {
     }
 
     /// Check for new notifications since last check
+    ///
+    /// The max ROWID always goes up but the last ROWID can change
+    /// to a lower number. This happens when rows are deleted when
+    /// a user dismisses notifications.
+    ///
+    /// The algorithm for detecting new notifications is to hold on
+    /// to the last observed max_id and comparing to the current
+    /// max_id. If they don't match, query for everything above the
+    /// current max ID.
     async fn check_for_new_notifications(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self.db.connect().await?;
 
@@ -127,13 +153,23 @@ impl NotificationDaemon {
                         println!("  Parsed notification:");
                         println!("    ID: {}", notification.id);
                         println!("    Title: {}", notification.title);
-                        if let Some(subtitle) = notification.subtitle {
+                        if let Some(subtitle) = &notification.subtitle {
                             println!("    Subtitle: {}", subtitle);
                         }
                         println!("    Body: {}", notification.body);
                         println!("    Date: {}", notification.date);
-                        if let Some(bundle_id) = notification.bundle_id {
+                        if let Some(bundle_id) = &notification.bundle_id {
                             println!("    Bundle ID: {}", bundle_id);
+                        }
+
+                        // Forward to webhook if configured
+                        #[cfg(feature = "webhook")]
+                        if let Some(webhook_url) = &self.webhook_url {
+                            if let Err(e) = forward_to_webhook(webhook_url, &notification).await {
+                                eprintln!("Failed to forward notification: {}", e);
+                            } else {
+                                println!("Notification forwarded to webhook");
+                            }
                         }
                     } else {
                         println!("  Failed to parse notification data into structured format");
@@ -168,11 +204,10 @@ fn parse_notification_from_plist(plist_value: &Value, rowid: i64) -> Option<Noti
             let mut bundle_id: Option<String> = None;
 
             // Extract bundle ID from the main dictionary (app field)
-            if let Some(bundle_id_value) = dict.get("app") {
-                if let Some(bundle_id_str) = bundle_id_value.as_string() {
+            if let Some(bundle_id_value) = dict.get("app")
+                && let Some(bundle_id_str) = bundle_id_value.as_string() {
                     bundle_id = Some(bundle_id_str.to_string());
                 }
-            }
 
             // Extract date from the main dictionary (date field)
             if let Some(date_value) = dict.get("date") {
@@ -183,30 +218,26 @@ fn parse_notification_from_plist(plist_value: &Value, rowid: i64) -> Option<Noti
             }
 
             // Look for the nested request dictionary that contains notification details
-            if let Some(req_value) = dict.get("req") {
-                if let Value::Dictionary(req_dict) = req_value {
+            if let Some(req_value) = dict.get("req")
+                && let Value::Dictionary(req_dict) = req_value {
                     // Extract title from nested req dictionary (field "titl")
-                    if let Some(title_value) = req_dict.get("titl") {
-                        if let Some(title_str) = title_value.as_string() {
+                    if let Some(title_value) = req_dict.get("titl")
+                        && let Some(title_str) = title_value.as_string() {
                             title = title_str.to_string();
                         }
-                    }
 
                     // Extract subtitle from nested req dictionary (field "subt")
-                    if let Some(subtitle_value) = req_dict.get("subt") {
-                        if let Some(subtitle_str) = subtitle_value.as_string() {
+                    if let Some(subtitle_value) = req_dict.get("subt")
+                        && let Some(subtitle_str) = subtitle_value.as_string() {
                             subtitle = Some(subtitle_str.to_string());
                         }
-                    }
 
                     // Extract body from nested req dictionary (field "body")
-                    if let Some(body_value) = req_dict.get("body") {
-                        if let Some(body_str) = body_value.as_string() {
+                    if let Some(body_value) = req_dict.get("body")
+                        && let Some(body_str) = body_value.as_string() {
                             body = body_str.to_string();
                         }
-                    }
                 }
-            }
 
             // Create and return the Notification struct
             Some(Notification {
@@ -220,4 +251,16 @@ fn parse_notification_from_plist(plist_value: &Value, rowid: i64) -> Option<Noti
         }
         _ => None
     }
+}
+
+/// Forward a notification to a webhook URL via HTTP POST
+#[cfg(feature = "webhook")]
+async fn forward_to_webhook(webhook_url: &str, notification: &Notification) -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::new();
+    client.post(webhook_url)
+        .json(notification)
+        .send()
+        .await?;
+
+    Ok(())
 }

@@ -5,6 +5,7 @@ use std::path::Path;
 
 /// Represents a notification from the system database
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "webhook", derive(serde::Serialize))]
 pub struct Notification {
     pub id: i64,
     pub title: String,

@@ -10,6 +10,24 @@ tokio-rusqlite = "0.5"
 hex = "0.4"
 plist = "1.4"
 
+[features]
+default = []
+webhook = ["reqwest", "serde", "serde_json"]
+
+[dependencies.reqwest]
+version = "0.12"
+features = ["json"]
+optional = true
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+optional = true
+
+[dependencies.serde_json]
+version = "1.0"
+optional = true
+
 [lib]
 name = "blurt"
 path = "src/lib.rs"
