@@ -1,48 +1,55 @@
-# macOS Notification Daemon
+# About `blurt`
 
-*THIS CODE IS AI GENERATED. DO NOT USE.*
+> WARNING: MOST OF THIS CODE WAS AI GENERATED. IT'S MOSTLY FINE THOUGH.
 
-A Rust daemon that reads notifications from the macOS system notification database.
+Stream your macOS notifications.
 
-## Overview
+*Why?*
 
-This daemon connects to the macOS system notification database located at:
-`~/Library/Group\ Containers/group.com.apple.usernoted/db2/db`
+Instead of integrating with every app and messaging service to get timely data into your AI application, integrate with the one service it's already aggregated—desktop notifications!
 
-It reads notification data from the `record` table and attempts to parse the binary plist data into structured information.
+But what if a notification isn't delivered e.g. app in focus? Notification deliver reflects what the user sees and what they are actually doing. Do they really need your AI when the user is actively staring at iMessages? Bonus, you're integrated with the Focus features of macOS by default!
 
-## Features
+## Usage
 
-- Asynchronous database operations using `tokio` and `tokio-rusqlite`
-- Binary plist decoding using the `plist` crate
-- Proper error handling for database access issues
-- Support for both absolute paths and `~` expansion
+```bash
+blurt
+```
+
+Filter by notification type:
+
+```bash
+blurt | grep "app.slack.com"
+```
+
+Speak your notifications:
+
+```bash
+blurt | jq -r --unbuffered '.body' | while read line ; do echo $line | say ; done
+```
+
+Forward to another service via webhook (requires compiling with `--feature webhook`):
+
+```bash
+blurt https://example.com/webhook
+```
 
 ## Requirements
 
-- Rust 1.70 or later
-- macOS system with notification database access
+- macOS Tahoe (may work on earlier versions but not tested)
 - Full Disk Access permission (required for reading the notification database)
 
 ## Installation
 
 ```bash
-cargo build --release
+cargo install --path .
 ```
 
-## Usage
+With webhook forwarding:
 
 ```bash
-# Run with default database path
-./target/release/blurt
-
-# Run with custom database path
-./target/release/blurt /path/to/custom/database.db
+cargo install --features webhook --path .
 ```
-
-## Database Schema
-
-The daemon queries the `record` table and expects binary plist data in the `data` column.
 
 ## Permission Requirements
 
@@ -50,15 +57,6 @@ Due to macOS security restrictions, this daemon requires:
 1. Full Disk Access permission in System Preferences > Security & Privacy > Privacy > Full Disk Access
 2. The application must be added to this list to access the notification database
 
-## Building
-
-```bash
-# Build for development
-cargo build
-
-# Build for release
-cargo build --release
-```
 
 ## License
 

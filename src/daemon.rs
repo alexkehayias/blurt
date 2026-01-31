@@ -1,10 +1,10 @@
 //! Daemon module for running the notification monitoring daemon.
 
-use crate::database::{NotificationDatabase, Notification};
 use tokio_rusqlite::Connection as TokioConnection;
 use plist::Value;
-use std::str;
 use tokio::time::{sleep, Duration};
+use serde_json;
+use crate::database::{NotificationDatabase, Notification};
 
 #[cfg(feature = "webhook")]
 use reqwest::Client;
@@ -40,14 +40,10 @@ impl NotificationDaemon {
 
     /// Start the daemon in continuous monitoring mode
     pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Starting macOS notification daemon in monitoring mode...");
-
         if !self.db.exists() {
             eprintln!("Database file does not exist: {}", self.db.db_path());
             return Err("Database file not found".into());
         }
-
-        println!("Connected to database: {}", self.db.db_path());
 
         // Start monitoring loop
         self.monitor_notifications().await?;
@@ -57,8 +53,6 @@ impl NotificationDaemon {
 
     /// Monitor notifications continuously
     async fn monitor_notifications(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Monitoring for new notifications (Ctrl+C to stop)...");
-
         loop {
             // Check for new notifications
             self.check_for_new_notifications().await?;
@@ -93,7 +87,6 @@ impl NotificationDaemon {
                 // If this is our first run, set the initial rowid
                 if self.last_rowid.is_none() {
                     self.last_rowid = Some(max_id);
-                    println!("Initialized monitoring from ROWID: {}", max_id);
                     return Ok(());
                 }
 
@@ -111,7 +104,7 @@ impl NotificationDaemon {
                 }
             }
             None => {
-                println!("No records found in the record table");
+                // No records found, nothing to do
             }
         }
 
@@ -140,8 +133,6 @@ impl NotificationDaemon {
 
         // Process each new record
         for (rowid, bytes) in &new_records {
-            println!("Processing notification from ROWID: {}", rowid);
-
             // Update the maximum ROWID seen
             actual_max_rowid = *rowid;
 
@@ -150,39 +141,24 @@ impl NotificationDaemon {
                 Ok(plist_value) => {
                     // Parse the plist into our Notification struct
                     if let Some(notification) = parse_notification_from_plist(&plist_value, *rowid) {
-                        println!("  Parsed notification:");
-                        println!("    ID: {}", notification.id);
-                        println!("    Title: {}", notification.title);
-                        if let Some(subtitle) = &notification.subtitle {
-                            println!("    Subtitle: {}", subtitle);
-                        }
-                        println!("    Body: {}", notification.body);
-                        println!("    Date: {}", notification.date);
-                        if let Some(bundle_id) = &notification.bundle_id {
-                            println!("    Bundle ID: {}", bundle_id);
-                        }
-
-                        // Forward to webhook if configured
-                        #[cfg(feature = "webhook")]
-                        if let Some(webhook_url) = &self.webhook_url {
-                            if let Err(e) = forward_to_webhook(webhook_url, &notification).await {
-                                eprintln!("Failed to forward notification: {}", e);
-                            } else {
-                                println!("Notification forwarded to webhook");
+                        // Either forward the notification to the
+                        // webhook OR print json to stdout
+                        if cfg!(feature = "webhook") {
+                            #[cfg(feature = "webhook")]
+                            if let Some(webhook_url) = &self.webhook_url {
+                                if let Err(e) = forward_to_webhook(webhook_url, &notification).await {
+                                    eprintln!("Failed to forward notification: {}", e);
+                                }
                             }
+                        } else {
+                            println!(r"{}", serde_json::to_string(&notification).unwrap());
                         }
                     } else {
-                        println!("  Failed to parse notification data into structured format");
-                        // Fallback to showing raw plist
-                        println!("  Raw plist data:");
-                        println!("  {:#?}", plist_value);
+                        eprintln!("Failed to parse notification data into structured format");
                     }
                 }
                 Err(e) => {
-                    println!("  Failed to parse as binary plist: {}", e);
-                    // If it's not a plist, show raw data
-                    let hex_string = hex::encode(bytes);
-                    println!("  Raw hex data: {}", hex_string);
+                    eprintln!("Failed to parse as binary plist: {}", e);
                 }
             }
         }

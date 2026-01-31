@@ -1,5 +1,3 @@
-//! Main entry point for the macOS notification daemon.
-
 use blurt::daemon::NotificationDaemon;
 use std::env;
 
@@ -7,32 +5,25 @@ use std::env;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
-    // Path to the macOS notification database
-    let db_path = "~/Library/Group Containers/group.com.apple.usernoted/db2/db";
-
-    // Expand the path if it contains ~
-    let expanded_path = if db_path.starts_with("~/") {
-        let home_dir = std::env::var("HOME").unwrap();
-        format!("{}/{}", home_dir, &db_path[2..])
-    } else {
-        db_path.to_string()
-    };
+    let home_dir = std::env::var("HOME").unwrap();
+    let db_path = format!("{}/Library/Group Containers/group.com.apple.usernoted/db2/db", home_dir);
 
     let mut daemon = if args.len() >= 2 {
+        if !cfg!(feature = "webhook") {
+            panic!("Webhook feature was enabled but no forwarding URL was provided. Rebuild without --features webhook if you want to emit json to stdout.");
+        }
         #[cfg(feature = "webhook")]
         {
-            println!("Webhook enabled: forwarding notifications to {}", args[1]);
-            NotificationDaemon::with_webhook(&expanded_path, args[1].clone())
+            NotificationDaemon::with_webhook(&db_path, args[1].clone())
         }
         #[cfg(not(feature = "webhook"))]
         {
             panic!("Webhook feature is not enabled. Rebuild with --features webhook");
         }
     } else {
-        NotificationDaemon::new(&expanded_path)
+        NotificationDaemon::new(&db_path)
     };
 
-    // Start the daemon
     daemon.start().await?;
 
     Ok(())
