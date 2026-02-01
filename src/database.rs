@@ -2,6 +2,7 @@
 
 use tokio_rusqlite::Connection as TokioConnection;
 use std::path::Path;
+use rusqlite::OpenFlags;
 
 /// Represents a notification from the system database
 #[derive(Debug, Clone, serde::Serialize)]
@@ -27,10 +28,10 @@ impl NotificationDatabase {
         }
     }
 
-    /// Connect to the database
+    /// Connect to the database in read-only mode
     pub async fn connect(&self) -> Result<TokioConnection, Box<dyn std::error::Error>> {
         let db_path = self.db_path.clone();
-        let conn = tokio_rusqlite::Connection::open(db_path).await?;
+        let conn = tokio_rusqlite::Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY).await?;
         Ok(conn)
     }
 
