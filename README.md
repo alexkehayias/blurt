@@ -6,7 +6,7 @@ Stream your macOS notifications.
 
 *Why?*
 
-Instead of integrating with every app and messaging service to get timely data into your AI application, integrate with the one service it's already aggregated—desktop notifications!
+Instead of integrating with every app and messaging service to get timely data into your AI application, integrate all at once by reading desktop notifications.
 
 But what if a notification isn't delivered e.g. app in focus? Notification deliver reflects what the user sees and what they are actually doing. Do they really need your AI when the user is actively staring at iMessages? Bonus, you're integrated with the Focus features of macOS by default!
 

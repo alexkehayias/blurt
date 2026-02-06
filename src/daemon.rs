@@ -12,7 +12,7 @@ use reqwest::Client;
 /// The main daemon structure
 pub struct NotificationDaemon {
     db: NotificationDatabase,
-    last_rowid: Option<i64>,
+    pub last_rowid: Option<i64>,
     #[cfg(feature = "webhook")]
     webhook_url: Option<String>,
 }
@@ -72,7 +72,7 @@ impl NotificationDaemon {
     /// to the last observed max_id and comparing to the current
     /// max_id. If they don't match, query for everything above the
     /// current max ID.
-    async fn check_for_new_notifications(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn check_for_new_notifications(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self.db.connect().await?;
 
         // Get the maximum ROWID to know how far we've checked
@@ -112,7 +112,7 @@ impl NotificationDaemon {
     }
 
     /// Query new notifications since last check
-    async fn query_new_notifications(&self, conn: &TokioConnection, last_rowid: i64) -> Result<i64, Box<dyn std::error::Error>> {
+    pub async fn query_new_notifications(&self, conn: &TokioConnection, last_rowid: i64) -> Result<i64, Box<dyn std::error::Error>> {
         // Query all new records since last checked ROWID
         let new_records = conn.call(move |db_conn| {
             let mut stmt = db_conn.prepare("SELECT ROWID, data FROM record WHERE ROWID > ? ORDER BY ROWID ASC")?;
@@ -234,7 +234,9 @@ fn parse_notification_from_plist(plist_value: &Value, rowid: i64) -> Option<Noti
 async fn forward_to_webhook(webhook_url: &str, notification: &Notification) -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     client.post(webhook_url)
+        .timeout(Duration::from_secs(5))
         .json(notification)
+        .timeout
         .send()
         .await?;
 
